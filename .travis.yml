@@ -1,0 +1,131 @@
+matrix:
+  include:
+    - language: go
+      sudo: false
+
+      os:
+        - linux
+
+      env:
+        - GO111MODULE=on
+        - GIMME_GO_VERSION=1.x
+
+      go:
+        - 1.x
+        - 1.11
+
+      script:
+        # Run tests
+        - go test -race -v -bench=. -coverprofile=coverage.txt -covermode=atomic ./...
+        # Windows-386 build
+        - GOOS=windows GOARCH=386 VERSION=${TRAVIS_TAG:-dev} make release
+        # Windows-amd64 build
+        - GOOS=windows GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
+        # Linux-386 build
+        - GOOS=linux GOARCH=386 VERSION=${TRAVIS_TAG:-dev} make release
+        # Linux-amd64 build
+        - GOOS=linux GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
+        # Darwin-amd64 build
+        - GOOS=darwin GOARCH=amd64 VERSION=${TRAVIS_TAG:-dev} make release
+        # List build output
+        - ls -l build/dnsproxy-*
+
+      after_success:
+        - bash <(curl -s https://codecov.io/bash)
+
+      deploy:
+        provider: releases
+        api_key: $GITHUB_TOKEN
+        file:
+          - build/dnsproxy-*.zip
+          - build/dnsproxy-*.tar.gz
+        on:
+          repo: happyhater/dnsproxy
+          tags: true
+        file_glob: true
+        skip_cleanup: true
+
+    - language: android
+      sudo: true
+
+      android:
+        components:
+          - tools
+          - platform-tools
+          - tools
+          - build-tools-26.0.2
+          - android-26
+
+      os:
+        - linux
+
+      env:
+        - GO111MODULE=on
+        - GIMME_GO_VERSION=1.x
+
+      # Make sure Android NDK is installed
+      before_install:
+        - mkdir -p $ANDROID_HOME/licenses
+        - echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > $ANDROID_HOME/licenses/android-sdk-license
+        - echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> $ANDROID_HOME/licenses/android-sdk-license
+
+      install:
+        - eval "$(curl -sL https://raw.githubusercontent.com/travis-ci/gimme/master/gimme | bash)"
+        - echo y | sdkmanager "ndk-bundle"
+        # Patching NDK (see https://github.com/golang/go/issues/29706). Remove after
+        # TODO: Remove after new NDK stable update
+        - sed -i.bak 's/-target {} -stdlib=libc\+\+/-target {}/g' "$ANDROID_HOME/ndk-bundle/build/tools/make_standalone_toolchain.py"
+        - echo y | sdkmanager "cmake;3.6.4111459"
+        - echo y | sdkmanager "lldb;3.1"
+
+      script:
+        - go version
+        - cd mobile
+        - make android
+        - zip -9 -r dnsproxy-android-library-${TRAVIS_TAG:-dev}.zip dnsproxy.aar dnsproxy-sources.jar
+        - ls -l dnsproxy-android-library-*
+
+      deploy:
+        provider: releases
+        api_key: $GITHUB_TOKEN
+        file:
+          - dnsproxy-android-library-*.zip
+        on:
+          repo: happyhater/dnsproxy
+          tags: true
+        file_glob: true
+        skip_cleanup: true
+
+    - language: go
+      sudo: true
+
+      os:
+        - osx
+
+      osx_image: xcode10.1
+
+      go:
+        # This is important for iOS version to use Go v1.11
+        - 1.11
+
+      env:
+        - GO111MODULE=on
+        - GIMME_GO_VERSION=1.x
+
+      script:
+        - go version
+        - cd mobile
+        - make ios
+        - zip -9 -r dnsproxy-ios-library-${TRAVIS_TAG:-dev}.zip dnsproxy.framework
+        - ls -l dnsproxy-ios-library-*
+
+      deploy:
+        provider: releases
+        api_key: $GITHUB_TOKEN
+        file:
+          - dnsproxy-ios-library-*.zip
+        on:
+          repo: happyhater/dnsproxy
+          tags: true
+        file_glob: true
+        skip_cleanup: true
